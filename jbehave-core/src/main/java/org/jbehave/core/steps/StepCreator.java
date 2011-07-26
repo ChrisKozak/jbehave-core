@@ -8,6 +8,7 @@ import org.apache.commons.lang.builder.ToStringStyle;
 import org.jbehave.core.RestartScenario;
 import org.jbehave.core.annotations.AfterScenario.Outcome;
 import org.jbehave.core.annotations.Named;
+import org.jbehave.core.embedder.SoftAssertionLog;
 import org.jbehave.core.failures.BeforeOrAfterFailed;
 import org.jbehave.core.failures.UUIDExceptionWrapper;
 import org.jbehave.core.model.ExamplesTable;
@@ -113,7 +114,7 @@ public class StepCreator {
     /**
      * Extract annotated parameter names from the @Named parameter annotations
      * of the method
-     * 
+     *
      * @param method the Method containing the annotations
      * @return An array of annotated parameter names, which <b>may</b> include
      *         <code>null</code> values for parameters that are not annotated
@@ -168,7 +169,7 @@ public class StepCreator {
         String value = parameters[position];
         if (value != null) {
             if ( isTable(type)){
-                stepText = stepText.replace(value, PARAMETER_TABLE_START + value + PARAMETER_TABLE_END);                
+                stepText = stepText.replace(value, PARAMETER_TABLE_START + value + PARAMETER_TABLE_END);
             } else {
                 stepText = stepText.replace(value, PARAMETER_VALUE_START + value + PARAMETER_VALUE_END)
                                    .replace("\n", PARAMETER_VALUE_NEWLINE);
@@ -462,6 +463,9 @@ public class StepCreator {
                 stepMonitor.performing(stepAsString, dryRun);
                 if (!dryRun) {
                     method.invoke(stepsInstance(), convertedParameters);
+                }
+                if (SoftAssertionLog.hasAnyFailures()) {
+                    return failedSoftly(stepAsString).withParameterValues(parametrisedStep);
                 }
                 return successful(stepAsString).withParameterValues(parametrisedStep);
             } catch (ParameterNotFound e) {

@@ -2,27 +2,13 @@ package org.jbehave.core.embedder;
 
 import org.jbehave.core.RestartScenario;
 import org.jbehave.core.configuration.Configuration;
-import org.jbehave.core.failures.FailureStrategy;
-import org.jbehave.core.failures.PendingStepFound;
-import org.jbehave.core.failures.PendingStepStrategy;
-import org.jbehave.core.failures.SilentlyAbsorbingFailure;
-import org.jbehave.core.failures.UUIDExceptionWrapper;
-import org.jbehave.core.model.ExamplesTable;
-import org.jbehave.core.model.GivenStories;
-import org.jbehave.core.model.GivenStory;
-import org.jbehave.core.model.Meta;
-import org.jbehave.core.model.Scenario;
-import org.jbehave.core.model.Story;
+import org.jbehave.core.failures.*;
+import org.jbehave.core.model.*;
 import org.jbehave.core.reporters.ConcurrentStoryReporter;
 import org.jbehave.core.reporters.StoryReporter;
-import org.jbehave.core.steps.CandidateSteps;
-import org.jbehave.core.steps.InjectableStepsFactory;
-import org.jbehave.core.steps.PendingStepMethodGenerator;
-import org.jbehave.core.steps.ProvidedStepsFactory;
-import org.jbehave.core.steps.Step;
+import org.jbehave.core.steps.*;
 import org.jbehave.core.steps.StepCollector.Stage;
 import org.jbehave.core.steps.StepCreator.PendingStep;
-import org.jbehave.core.steps.StepResult;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,7 +20,7 @@ import static org.codehaus.plexus.util.StringUtils.capitalizeFirstLetter;
 /**
  * Runs a {@link Story}, given a {@link Configuration} and a list of
  * {@link CandidateSteps}, describing the results to the {@link StoryReporter}.
- * 
+ *
  * @author Elizabeth Keogh
  * @author Mauro Talevi
  * @author Paul Hammant
@@ -52,7 +38,7 @@ public class StoryRunner {
     /**
      * Run steps before or after a collection of stories. Steps are execute only
      * <b>once</b> per collection of stories.
-     * 
+     *
      * @param configuration the Configuration used to find the steps to run
      * @param candidateSteps the List of CandidateSteps containing the candidate
      *            steps methods
@@ -91,7 +77,7 @@ public class StoryRunner {
 
     /**
      * Runs a Story with the given configuration and steps.
-     * 
+     *
      * @param configuration the Configuration used to run story
      * @param candidateSteps the List of CandidateSteps containing the candidate
      *            steps methods
@@ -106,7 +92,7 @@ public class StoryRunner {
     /**
      * Runs a Story with the given configuration and steps, applying the given
      * meta filter.
-     * 
+     *
      * @param configuration the Configuration used to run story
      * @param candidateSteps the List of CandidateSteps containing the candidate
      *            steps methods
@@ -123,7 +109,7 @@ public class StoryRunner {
     /**
      * Runs a Story with the given configuration and steps, applying the given
      * meta filter, and staring from given state.
-     * 
+     *
      * @param configuration the Configuration used to run story
      * @param candidateSteps the List of CandidateSteps containing the candidate
      *            steps methods
@@ -142,7 +128,7 @@ public class StoryRunner {
     /**
      * Runs a Story with the given steps factory, applying the given meta
      * filter, and staring from given state.
-     * 
+     *
      * @param configuration the Configuration used to run story
      * @param stepsFactory the InjectableStepsFactory used to created the
      *            candidate steps methods
@@ -150,7 +136,7 @@ public class StoryRunner {
      * @param filter the Filter to apply to the story Meta
      * @param beforeStories the State before running any of the stories, if not
      *            <code>null</code>
-     * 
+     *
      * @throws Throwable if failures occurred and FailureStrategy dictates it to
      *             be re-thrown.
      */
@@ -166,7 +152,7 @@ public class StoryRunner {
 
     /**
      * Returns the parsed story from the given path
-     * 
+     *
      * @param configuration the Configuration used to run story
      * @param storyPath the story path
      * @return The parsed Story
@@ -391,6 +377,7 @@ public class StoryRunner {
         }
         State state = context.state();
         for (Step step : steps) {
+            SoftAssertionLog.reset();
             try {
                 state = state.run(step);
             } catch (RestartScenario rs) {
@@ -405,12 +392,19 @@ public class StoryRunner {
         State run(Step step);
     }
 
-    private final class FineSoFar implements State {
+    private class FineSoFar implements State {
 
         public State run(Step step) {
             UUIDExceptionWrapper storyFailureIfItHappened = storyFailure.get();
             StepResult result = step.perform(storyFailureIfItHappened);
             result.describeTo(reporter.get());
+
+            if (SoftAssertionLog.hasAnyFailures()) {
+                storyFailure.set(mostImportantOf(storyFailureIfItHappened, result.getFailure()));
+                currentStrategy.set(strategyFor(storyFailure.get()));
+                return new SoftFailureHappened();
+            }
+
             UUIDExceptionWrapper stepFailure = result.getFailure();
             if (stepFailure == null) {
                 return this;
@@ -434,6 +428,9 @@ public class StoryRunner {
                 return failureStrategy.get();
             }
         }
+    }
+
+    private class SoftFailureHappened extends FineSoFar {
     }
 
     private final class SomethingHappened implements State {
