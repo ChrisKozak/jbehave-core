@@ -14,6 +14,7 @@ public class SoftAssertionLog {
     public static <T> void ensureThat(T actual, Matcher<T> expected){
         ensureThat(null, actual, expected);
     }
+
     public static <T> void ensureThat(String reason, T actual, Matcher<T> expected){
         try {
             assertThat(reason, actual, expected);
