@@ -9,7 +9,7 @@ import static org.junit.Assert.assertThat;
 
 public class SoftAssertionLog {
 
-    private final static ThreadLocal<List<Throwable>> softAssertions = new ThreadLocal<List<Throwable>>();
+    final static ThreadLocal<List<Throwable>> softAssertions = new ThreadLocal<List<Throwable>>();
 
     public static <T> void ensureThat(T actual, Matcher<T> expected){
         ensureThat(null, actual, expected);
@@ -34,6 +34,7 @@ public class SoftAssertionLog {
     }
 
     public static Throwable getMostRecentFailure() {
+        if (getAssertionLog().isEmpty()) throw new RuntimeException("Soft assertion log is empty!");
         return getAssertionLog().get(getAssertionLog().size()-1);
     }
 

@@ -6,7 +6,7 @@ import org.jbehave.core.reporters.StoryReporter;
 import org.jbehave.core.steps.AbstractStepResult;
 
 public class SoftFailure extends AbstractStepResult{
-    public SoftFailure(String step, Throwable throwable) {
+    public SoftFailure(String step, UUIDExceptionWrapper throwable) {
         super(step, new UUIDExceptionWrapper(throwable));
     }
 

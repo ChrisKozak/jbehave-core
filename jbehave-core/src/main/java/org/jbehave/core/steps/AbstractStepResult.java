@@ -2,7 +2,6 @@ package org.jbehave.core.steps;
 
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang.builder.ToStringStyle;
-import org.jbehave.core.embedder.SoftAssertionLog;
 import org.jbehave.core.embedder.SoftFailure;
 import org.jbehave.core.failures.PendingStepFound;
 import org.jbehave.core.failures.UUIDExceptionWrapper;
@@ -139,8 +138,8 @@ public abstract class AbstractStepResult implements StepResult {
         return new Successful(step);
     }
 
-    public static StepResult failedSoftly(String step) {
-        return new SoftFailure(step, SoftAssertionLog.getMostRecentFailure());
+    public static StepResult failedSoftly(String step, UUIDExceptionWrapper e) {
+        return new SoftFailure(step, e);
     }
 
     public static StepResult ignorable(String step) {

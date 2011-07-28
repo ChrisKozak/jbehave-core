@@ -465,7 +465,7 @@ public class StepCreator {
                     method.invoke(stepsInstance(), convertedParameters);
                 }
                 if (SoftAssertionLog.hasAnyFailures()) {
-                    return failedSoftly(stepAsString).withParameterValues(parametrisedStep);
+                    return failedSoftly(stepAsString, new UUIDExceptionWrapper(SoftAssertionLog.getMostRecentFailure())).withParameterValues(parametrisedStep);
                 }
                 return successful(stepAsString).withParameterValues(parametrisedStep);
             } catch (ParameterNotFound e) {
