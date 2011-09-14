@@ -14,7 +14,7 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 import static org.junit.matchers.JUnitMatchers.containsString;
 
-public class SoftAssertionLogBehavior_ThereIsNoUInBehaviorPaul {
+public class SoftAssertionLogBehaviour {
 
     @Before
     public void reset() {
