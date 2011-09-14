@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.PrintStream;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
 
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang.builder.ToStringStyle;
@@ -12,6 +13,7 @@ import org.jbehave.core.failures.BatchFailures;
 import org.jbehave.core.model.Meta;
 import org.jbehave.core.model.Story;
 import org.jbehave.core.model.StoryMaps;
+import org.jbehave.core.reporters.Format;
 import org.jbehave.core.reporters.ReportsCount;
 
 /**
@@ -148,6 +150,10 @@ public class PrintStreamEmbedderMonitor implements EmbedderMonitor {
     public void usingThreads(int threads) {
         print("Using " + threads + " threads");
     }
+    
+    public void usingExecutorService(ExecutorService executorService) {
+        print("Using executor service " + executorService);
+    }
 
     @Override
     public String toString() {
@@ -155,7 +161,7 @@ public class PrintStreamEmbedderMonitor implements EmbedderMonitor {
     }
 
     protected void print(String message) {
-        output.println(message);
+        Format.println(output, message);
     }
 
     protected void printStackTrace(Throwable e) {

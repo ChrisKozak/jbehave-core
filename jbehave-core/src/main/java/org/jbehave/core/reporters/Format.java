@@ -1,6 +1,8 @@
 package org.jbehave.core.reporters;
 
 
+import java.io.PrintStream;
+
 public abstract class Format {
 
     public static final Format CONSOLE = new Format("CONSOLE") {
@@ -61,7 +63,7 @@ public abstract class Format {
         public StoryReporter createStoryReporter(FilePrintStreamFactory factory,
                 StoryReporterBuilder storyReporterBuilder) {
             factory.useConfiguration(storyReporterBuilder.fileConfiguration("html"));
-            return new HtmlTemplateOuput(factory.getOutputFile(), storyReporterBuilder.keywords(), new FreemarkerProcessor());
+            return new HtmlTemplateOuput(factory.getOutputFile(), storyReporterBuilder.keywords());
         }
     };
 
@@ -99,6 +101,15 @@ public abstract class Format {
             StoryReporterBuilder storyReporterBuilder);
 
     public String name() {
+        return name;
+    }
+
+    public static void println(PrintStream writer, Object what) {
+        writer.println(what);
+    }
+    
+    @Override
+    public String toString() {
         return name;
     }
 

@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.jbehave</groupId>
     <artifactId>jbehave</artifactId>
-    <version>3.5-SNAPSHOT</version>
+    <version>3.6-SNAPSHOT</version>
   </parent>
   <artifactId>jbehave-examples</artifactId>
   <packaging>pom</packaging>
@@ -19,6 +19,7 @@
     <module>gameoflife</module>
     <module>groovy</module>
     <module>spring-security</module>
+    <module>threads</module>
     <module>trader</module>
     <module>trader-ant</module>
     <module>trader-annotations</module>
@@ -68,6 +69,31 @@
           <groupId>org.jbehave</groupId>
           <artifactId>jbehave-maven-plugin</artifactId>
           <version>${jbehave.version}</version>
+        </plugin>
+        <!--This plugin's configuration is used to store Eclipse m2e settings only. It has no influence on the Maven build itself.-->
+        <plugin>
+          <groupId>org.eclipse.m2e</groupId>
+          <artifactId>lifecycle-mapping</artifactId>
+          <version>1.0.0</version>
+          <configuration>
+            <lifecycleMappingMetadata>
+              <pluginExecutions>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>org.jbehave</groupId>
+                    <artifactId>jbehave-maven-plugin</artifactId>
+                    <versionRange>[3.6-SNAPSHOT,)</versionRange>
+                    <goals>
+                      <goal>unpack-view-resources</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore></ignore>
+                  </action>
+                </pluginExecution>
+              </pluginExecutions>
+            </lifecycleMappingMetadata>
+          </configuration>
         </plugin>
       </plugins>
     </pluginManagement>

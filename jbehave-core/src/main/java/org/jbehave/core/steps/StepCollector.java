@@ -9,6 +9,8 @@ import org.jbehave.core.annotations.AfterStory;
 import org.jbehave.core.annotations.BeforeScenario;
 import org.jbehave.core.annotations.BeforeStories;
 import org.jbehave.core.annotations.BeforeStory;
+import org.jbehave.core.annotations.ScenarioType;
+import org.jbehave.core.model.Meta;
 import org.jbehave.core.model.Scenario;
 import org.jbehave.core.model.Story;
 
@@ -45,12 +47,12 @@ public interface StepCollector {
     /**
      * Collects all of the {@link BeforeScenario} or {@link AfterScenario} steps to execute.
      * 
+     *
      * @param candidateSteps the {@link CandidateSteps}.
-     * @param failureOccured whether a failure occured in the scenario execution
-     * @param parameters the parameters.
-     * @return A List of executable {@link Step}s 
+     * @param storyAndScenarioMeta the story and scenario {@link org.jbehave.core.model.Meta} parameters
+     * @param type the ScenarioType
      */
-    List<Step> collectBeforeOrAfterScenarioSteps(List<CandidateSteps> candidateSteps, Stage stage, boolean failureOccured);
+    List<Step> collectBeforeOrAfterScenarioSteps(List<CandidateSteps> candidateSteps, Meta storyAndScenarioMeta, Stage stage, ScenarioType type);
 
     /**
      * Collects all of the {@link Step}s to execute for a scenario.

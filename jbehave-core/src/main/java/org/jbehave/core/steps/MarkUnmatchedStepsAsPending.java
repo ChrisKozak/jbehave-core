@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.jbehave.core.annotations.ScenarioType;
 import org.jbehave.core.configuration.Keywords;
 import org.jbehave.core.i18n.LocalizedKeywords;
+import org.jbehave.core.model.Meta;
 import org.jbehave.core.model.Scenario;
 import org.jbehave.core.model.Story;
 import org.jbehave.core.steps.AbstractStepResult.Pending;
@@ -28,6 +30,10 @@ public class MarkUnmatchedStepsAsPending implements StepCollector {
         this(stepFinder, new LocalizedKeywords());
     }
 
+    public MarkUnmatchedStepsAsPending(Keywords keywords) {
+        this(new StepFinder(), keywords);
+    }
+
    public MarkUnmatchedStepsAsPending(StepFinder stepFinder, Keywords keywords) {
         this.stepFinder = stepFinder;
         this.keywords = keywords;
@@ -45,30 +51,33 @@ public class MarkUnmatchedStepsAsPending implements StepCollector {
             boolean givenStory) {
         List<Step> steps = new ArrayList<Step>();
         for (CandidateSteps candidates : candidateSteps) {
-            steps.addAll(createSteps(candidates.listBeforeOrAfterStory(givenStory), stage));
+            steps.addAll(createSteps(candidates.listBeforeOrAfterStory(givenStory), story.getMeta(), stage));
         }
         return steps;
     }
 
-    public List<Step> collectBeforeOrAfterScenarioSteps(List<CandidateSteps> candidateSteps, Stage stage,
-            boolean failureOccured) {
+    public List<Step> collectBeforeOrAfterScenarioSteps(List<CandidateSteps> candidateSteps, Meta storyAndScenarioMeta, Stage stage, ScenarioType type) {
         List<Step> steps = new ArrayList<Step>();
         for (CandidateSteps candidates : candidateSteps) {
-            List<BeforeOrAfterStep> beforeOrAfterScenarioSteps = candidates.listBeforeOrAfterScenario();
+            List<BeforeOrAfterStep> beforeOrAfterScenarioSteps = candidates.listBeforeOrAfterScenario(type);
             if (stage == Stage.BEFORE) {
-                steps.addAll(createSteps(beforeOrAfterScenarioSteps, stage));
+                steps.addAll(createSteps(beforeOrAfterScenarioSteps, storyAndScenarioMeta, stage));
             } else {
-                steps.addAll(0, createStepsUponOutcome(beforeOrAfterScenarioSteps, stage, failureOccured));
+                steps.addAll(0, createStepsUponOutcome(beforeOrAfterScenarioSteps, storyAndScenarioMeta, stage));
             }
         }
         return steps;
     }
 
     private List<Step> createSteps(List<BeforeOrAfterStep> beforeOrAfter, Stage stage) {
+        return createSteps(beforeOrAfter, null, stage);
+    }
+
+    private List<Step> createSteps(List<BeforeOrAfterStep> beforeOrAfter, Meta meta, Stage stage) {
         List<Step> steps = new ArrayList<Step>();
         for (BeforeOrAfterStep step : beforeOrAfter) {
             if (stage == step.getStage()) {
-                steps.add(step.createStep());
+                steps.add(meta == null ? step.createStep() : step.createStepWith(meta));
             }
         }
         return steps;
@@ -81,11 +90,11 @@ public class MarkUnmatchedStepsAsPending implements StepCollector {
         return steps;
     }
 
-    private List<Step> createStepsUponOutcome(List<BeforeOrAfterStep> beforeOrAfter, Stage stage, boolean failureOccured) {
+    private List<Step> createStepsUponOutcome(List<BeforeOrAfterStep> beforeOrAfter, Meta storyAndScenarioMeta, Stage stage) {
         List<Step> steps = new ArrayList<Step>();
         for (BeforeOrAfterStep step : beforeOrAfter) {
             if (stage == step.getStage()) {
-                steps.add(step.createStepUponOutcome(failureOccured));
+                steps.add(step.createStepUponOutcome(storyAndScenarioMeta));
             }
         }
         return steps;
@@ -117,14 +126,14 @@ public class MarkUnmatchedStepsAsPending implements StepCollector {
                             composedSteps = candidate.createComposedSteps(stepAsString, namedParameters, allCandidates);
                         }
                     }
-                    if (!candidate.isAndStep(stepAsString)) {
-                        // only update previous step if not AND step
+                    if (!(candidate.isAndStep(stepAsString) || candidate.isIgnorableStep(stepAsString))) {
+                        // only update previous step if not AND or IGNORABLE step
                         previousNonAndStep = stepAsString;
                     }
                     break;
                 }
             }
-            if ( !keywords.isAndStep(stepAsString)){
+            if ( !(keywords.isAndStep(stepAsString) || keywords.isIgnorableStep(stepAsString)) ){
                 previousNonAndStep = stepAsString;
             }
             steps.add(step);

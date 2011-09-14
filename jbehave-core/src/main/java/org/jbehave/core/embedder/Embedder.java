@@ -3,18 +3,13 @@ package org.jbehave.core.embedder;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
@@ -124,7 +119,7 @@ public class Embedder {
                     // collect and postpone decision to throw exception
                     batchFailures.put(name, e);
                 } else {
-                    if (embedderControls.ignoreFailureInStories()) {
+                    if (ignoreFailure(embedderControls)) {
                         embedderMonitor.embeddableFailed(name, e);
                     } else {
                         throw new RunningEmbeddablesFailed(name, e);
@@ -134,13 +129,21 @@ public class Embedder {
         }
 
         if (embedderControls.batch() && batchFailures.size() > 0) {
-            if (embedderControls.ignoreFailureInStories()) {
+            if (ignoreFailure(embedderControls)) {
                 embedderMonitor.batchFailed(batchFailures);
             } else {
                 throw new RunningEmbeddablesFailed(batchFailures);
             }
         }
 
+    }
+
+    private boolean ignoreFailure(EmbedderControls embedderControls) {
+        boolean ignore = embedderControls.ignoreFailureInStories();
+        if ( embedderControls.generateViewAfterStories() ){
+            ignore = ignore && embedderControls.ignoreFailureInView();
+        }
+        return ignore;
     }
 
     private List<Embeddable> embeddables(List<String> classNames, EmbedderClassLoader classLoader) {
@@ -184,38 +187,36 @@ public class Embedder {
         Configuration configuration = configuration();        
         InjectableStepsFactory stepsFactory = stepsFactory();
         List<CandidateSteps> candidateSteps = stepsFactory.createCandidateSteps();
-        
-        State beforeStories = storyRunner.runBeforeOrAfterStories(configuration, candidateSteps, Stage.BEFORE);
-
-        BatchFailures batchFailures = new BatchFailures();
         configureReporterBuilder(configuration);
         MetaFilter filter = new MetaFilter(StringUtils.join(metaFilters, " "), embedderMonitor);
+        
+        BatchFailures failures = new BatchFailures();
+
+        State beforeStories = storyRunner.runBeforeOrAfterStories(configuration, candidateSteps, Stage.BEFORE);
+
+        if ( storyRunner.failed(beforeStories) ){
+            failures.put(beforeStories.toString(), storyRunner.failure(beforeStories));
+        }
 
         List<Future<ThrowableStory>> futures = new ArrayList<Future<ThrowableStory>>();
 
         for (String storyPath : storyPaths) {
-            enqueueStory(batchFailures, filter, futures, storyPath, storyRunner.storyOfPath(configuration, storyPath), beforeStories);
+            enqueueStory(failures, filter, futures, storyPath, storyRunner.storyOfPath(configuration, storyPath), beforeStories);
         }
 
-        waitUntilAllDone(futures);
-
-        checkForFailures(futures);
+        waitUntilAllDoneOrFailed(futures, embedderControls, failures);
 
         State afterStories = storyRunner.runBeforeOrAfterStories(configuration, candidateSteps, Stage.AFTER);
 
         if ( storyRunner.failed(afterStories) ){
-            if (embedderControls.ignoreFailureInStories()){
-                embedderMonitor.beforeOrAfterStoriesFailed();
-            } else {
-                throw new RunningStoriesFailed();
-            }
+            failures.put(afterStories.toString(), storyRunner.failure(afterStories));
         }
 
-        if (embedderControls.batch() && batchFailures.size() > 0) {
+        if ( failures.size() > 0) {
             if (embedderControls.ignoreFailureInStories()) {
-                embedderMonitor.batchFailed(batchFailures);
+                embedderMonitor.batchFailed(failures);
             } else {
-                throw new RunningStoriesFailed(batchFailures);
+                throw new RunningStoriesFailed(failures);
             }
         }
 
@@ -239,7 +240,7 @@ public class Embedder {
 
     private synchronized Future<ThrowableStory> submit(List<Future<ThrowableStory>> futures, EnqueuedStory enqueuedStory) {
         if (executorService == null) {
-            executorService = createExecutorService();
+            useExecutorService(createExecutorService());
         }
         Future<ThrowableStory> submit = executorService.submit(enqueuedStory);
         futures.add(submit);
@@ -262,17 +263,10 @@ public class Embedder {
     protected ExecutorService createExecutorService() {
         int threads = embedderControls.threads();
         embedderMonitor.usingThreads(threads);
-        if (threads == 1) {
-            // this is necessary for situations where people use the
-            // PerStoriesWebDriverSteps class.
-            return new NonThreadingExecutorService();
-        } else {
-            return Executors.newFixedThreadPool(threads);
-        }
+        return Executors.newFixedThreadPool(threads);
     }
 
-    private void waitUntilAllDone(List<Future<ThrowableStory>> futures) {
-
+    private void waitUntilAllDoneOrFailed(List<Future<ThrowableStory>> futures, EmbedderControls embedderControls, BatchFailures failures) {
         long start = System.currentTimeMillis();
         boolean allDone = false;
         while (!allDone) {
@@ -280,12 +274,16 @@ public class Embedder {
             for (Future<ThrowableStory> future : futures) {
                 if (!future.isDone()) {
                     allDone = false;
-                    long durationInSecs = (System.currentTimeMillis() - start)/1000;
-                    if ( durationInSecs > embedderControls.storyTimeoutInSecs()) {
+                    long durationInSecs = storyDurationInSecs(start);
+                    if (durationInSecs > embedderControls.storyTimeoutInSecs()) {
                         Story story = null;
                         try {
                             story = future.get().getStory();
                         } catch (Throwable e) {
+                            failures.put(future.toString(), e);
+                            if (!embedderControls.ignoreFailureInStories()) {
+                                break;
+                            }
                         }
                         embedderMonitor.storyTimeout(durationInSecs, story);
                         future.cancel(true);
@@ -295,32 +293,34 @@ public class Embedder {
                     } catch (InterruptedException e) {
                     }
                     break;
+                } else {
+                    try {
+                        ThrowableStory throwableStory = future.get();
+                        if (throwableStory.throwable != null) {
+                            failures.put(future.toString(), throwableStory.throwable);
+                            if (!embedderControls.ignoreFailureInStories()) {
+                                break;
+                            }
+                        }
+                    } catch (Throwable e) {
+                        failures.put(future.toString(), e);
+                        if (!embedderControls.ignoreFailureInStories()) {
+                            break;
+                        }
+                    }
                 }
+            }
+        }
+        // cancel any outstanding execution which is not done before returning
+        for (Future<ThrowableStory> future : futures) {
+            if ( !future.isDone() ){
+                future.cancel(true);
             }
         }
     }
 
-    private void checkForFailures(List<Future<ThrowableStory>> futures) {
-        try {
-            BatchFailures failures = new BatchFailures();
-            for (Future<ThrowableStory> future : futures) {
-                try {
-                    ThrowableStory throwableStory = future.get();
-                    if (throwableStory.throwable != null) {
-                        failures.put(future.toString(), throwableStory.throwable);
-                    }
-                } catch (CancellationException e) {
-                    failures.put(future.toString(), e);
-                }
-            }
-            if (failures.size() > 0) {
-                throw new RunningStoriesFailed(failures);
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
-        }
+    private long storyDurationInSecs(long start) {
+        return (System.currentTimeMillis() - start) / 1000;
     }
 
     private void configureReporterBuilder(Configuration configuration) {
@@ -484,6 +484,11 @@ public class Embedder {
         this.embedderMonitor = embedderMonitor;
     }
 
+    public void useExecutorService(ExecutorService executorService){
+        this.executorService = executorService;        
+        embedderMonitor.usingExecutorService(executorService);
+    }
+    
     public void useMetaFilters(List<String> metaFilters) {
         this.metaFilters = metaFilters;
     }
@@ -555,95 +560,6 @@ public class Embedder {
                 RuntimeException cause) {
             super("View generation failed to " + outputDirectory + " for story maps " + storyMaps + " for resources "
                     + viewResources, cause);
-        }
-    }
-
-    /**
-     * Non-threading ExecutorService for situations where thread count = 1
-     */
-    public static class NonThreadingExecutorService implements ExecutorService {
-        public void shutdown() {
-            throw new UnsupportedOperationException();
-        }
-
-        public List<Runnable> shutdownNow() {
-            throw new UnsupportedOperationException();
-        }
-
-        public boolean isShutdown() {
-            throw new UnsupportedOperationException();
-        }
-
-        public boolean isTerminated() {
-            throw new UnsupportedOperationException();
-        }
-
-        public boolean awaitTermination(long l, TimeUnit timeUnit) throws InterruptedException {
-            throw new UnsupportedOperationException();
-        }
-
-        public <T> Future<T> submit(Callable<T> callable) {
-            final Object[] rc = new Object[1];
-            try {
-                rc[0] = callable.call();
-            } catch (Exception e) {
-                rc[0] = e;
-            }
-            return new Future<T>() {
-
-                public boolean cancel(boolean b) {
-                    throw new UnsupportedOperationException();
-                }
-
-                public boolean isCancelled() {
-                    throw new UnsupportedOperationException();
-                }
-
-                public boolean isDone() {
-                    return true;
-                }
-
-                @SuppressWarnings("unchecked")
-                public T get() throws InterruptedException, ExecutionException {
-                    return (T) rc[0];
-                }
-
-                public T get(long l, TimeUnit timeUnit) throws InterruptedException, ExecutionException,
-                        TimeoutException {
-                    return get();
-                }
-            };
-        }
-
-        public <T> Future<T> submit(Runnable runnable, T t) {
-            throw new UnsupportedOperationException();
-        }
-
-        public Future<?> submit(Runnable runnable) {
-            throw new UnsupportedOperationException();
-        }
-
-        public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> callables) throws InterruptedException {
-            throw new UnsupportedOperationException();
-        }
-
-        public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> callables, long l, TimeUnit timeUnit)
-                throws InterruptedException {
-            throw new UnsupportedOperationException();
-        }
-
-        public <T> T invokeAny(Collection<? extends Callable<T>> callables) throws InterruptedException,
-                ExecutionException {
-            throw new UnsupportedOperationException();
-        }
-
-        public <T> T invokeAny(Collection<? extends Callable<T>> callables, long l, TimeUnit timeUnit)
-                throws InterruptedException, ExecutionException, TimeoutException {
-            throw new UnsupportedOperationException();
-        }
-
-        public void execute(Runnable runnable) {
-            throw new UnsupportedOperationException();
         }
     }
 

@@ -1,20 +1,5 @@
 package org.jbehave.core.steps;
 
-import org.jbehave.core.model.ExamplesTable;
-import org.jbehave.core.steps.ParameterConverters.BooleanConverter;
-import org.jbehave.core.steps.ParameterConverters.BooleanListConverter;
-import org.jbehave.core.steps.ParameterConverters.DateConverter;
-import org.jbehave.core.steps.ParameterConverters.EnumConverter;
-import org.jbehave.core.steps.ParameterConverters.EnumListConverter;
-import org.jbehave.core.steps.ParameterConverters.ExamplesTableConverter;
-import org.jbehave.core.steps.ParameterConverters.MethodReturningConverter;
-import org.jbehave.core.steps.ParameterConverters.NumberConverter;
-import org.jbehave.core.steps.ParameterConverters.NumberListConverter;
-import org.jbehave.core.steps.ParameterConverters.ParameterConverter;
-import org.jbehave.core.steps.ParameterConverters.ParameterConvertionFailed;
-import org.jbehave.core.steps.ParameterConverters.StringListConverter;
-import org.junit.Test;
-
 import java.beans.IntrospectionException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
@@ -32,9 +17,26 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static org.hamcrest.Matchers.equalTo;
+import org.jbehave.core.model.ExamplesTable;
+import org.jbehave.core.steps.ParameterConverters.BooleanConverter;
+import org.jbehave.core.steps.ParameterConverters.BooleanListConverter;
+import org.jbehave.core.steps.ParameterConverters.DateConverter;
+import org.jbehave.core.steps.ParameterConverters.EnumConverter;
+import org.jbehave.core.steps.ParameterConverters.EnumListConverter;
+import org.jbehave.core.steps.ParameterConverters.ExamplesTableConverter;
+import org.jbehave.core.steps.ParameterConverters.MethodReturningConverter;
+import org.jbehave.core.steps.ParameterConverters.NumberConverter;
+import org.jbehave.core.steps.ParameterConverters.NumberListConverter;
+import org.jbehave.core.steps.ParameterConverters.ParameterConverter;
+import org.jbehave.core.steps.ParameterConverters.ParameterConvertionFailed;
+import org.jbehave.core.steps.ParameterConverters.StringListConverter;
+import org.junit.Test;
+
 import static org.hamcrest.MatcherAssert.assertThat;
+
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+
 import static org.mockito.Mockito.mock;
 
 public class ParameterConvertersBehaviour {
@@ -354,5 +356,30 @@ public class ParameterConvertersBehaviour {
         assertThat(list.get(0), is(true));
         assertThat(list.get(1), is(false));
         assertThat(list.get(2), is(true));
+    }
+
+    @Test(expected = ParameterConvertionFailed.class)
+    public void shouldNotModifyListOfConvertersFromOriginalParameterConvertersWhenCreatingNewInstance() throws Exception {
+        ParameterConverters original = new ParameterConverters();
+        original.newInstanceAdding(new FooToBarParameterConverter());
+
+        ensureItStillDoesNotKnowHowToConvertFooToBar(original);
+    }
+
+    private void ensureItStillDoesNotKnowHowToConvertFooToBar(ParameterConverters original) {
+        original.convert("foo", Bar.class);
+    }
+
+    private class Bar {
+    }
+
+    private class FooToBarParameterConverter implements ParameterConverter {
+        public boolean accept(Type type) {
+            return type == Bar.class;
+        }
+
+        public Object convertValue(String value, Type type) {
+            return new Bar();
+        }
     }
 }

@@ -5,13 +5,14 @@ import com.thoughtworks.paranamer.Paranamer;
 
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang.builder.ToStringStyle;
-import org.jbehave.core.RestartScenario;
 import org.jbehave.core.annotations.AfterScenario.Outcome;
 import org.jbehave.core.annotations.Named;
 import org.jbehave.core.embedder.SoftAssertionLog;
 import org.jbehave.core.failures.BeforeOrAfterFailed;
+import org.jbehave.core.failures.RestartingScenarioFailure;
 import org.jbehave.core.failures.UUIDExceptionWrapper;
 import org.jbehave.core.model.ExamplesTable;
+import org.jbehave.core.model.Meta;
 import org.jbehave.core.parsers.StepMatcher;
 
 import java.lang.annotation.Annotation;
@@ -38,15 +39,9 @@ public class StepCreator {
     private final InjectableStepsFactory stepsFactory;
     private final ParameterConverters parameterConverters;
     private final StepMatcher stepMatcher;
-    private final StepRunner beforeOrAfter;
-    private final StepRunner skip;
     private StepMonitor stepMonitor;
     private Paranamer paranamer = new NullParanamer();
     private boolean dryRun = false;
-
-    public StepCreator(Class<?> stepsType, InjectableStepsFactory stepsFactory, StepMonitor stepMonitor) {
-        this(stepsType, stepsFactory, null, null, stepMonitor);
-    }
 
     public StepCreator(Class<?> stepsType, InjectableStepsFactory stepsFactory, ParameterConverters parameterConverters, StepMatcher stepMatcher,
             StepMonitor stepMonitor) {
@@ -55,8 +50,6 @@ public class StepCreator {
         this.parameterConverters = parameterConverters;
         this.stepMatcher = stepMatcher;
         this.stepMonitor = stepMonitor;
-        this.beforeOrAfter = new BeforeOrAfter();
-        this.skip = new Skip();
     }
 
     public void useStepMonitor(StepMonitor stepMonitor) {
@@ -75,19 +68,19 @@ public class StepCreator {
         return stepsFactory.createInstanceOfType(stepsType);
     }
 
-    public Step createBeforeOrAfterStep(final Method method) {
-        return new BeforeOrAfterStep(method);
+    public Step createBeforeOrAfterStep(Method method, Meta meta) {
+        return new BeforeOrAfterStep(method, meta);
     }
 
-    public Step createAfterStepUponOutcome(final Method method, final Outcome outcome, final boolean failureOccured) {
+    public Step createAfterStepUponOutcome(final Method method, final Outcome outcome, Meta storyAndScenarioMeta) {
         switch (outcome) {
         case ANY:
         default:
-            return new AnyOrDefaultStep(method);
+            return new BeforeOrAfterStep(method, storyAndScenarioMeta);
         case SUCCESS:
-            return new SuccessStep(failureOccured, method);
+            return new SuccessStep(method, storyAndScenarioMeta);
         case FAILURE:
-            return new FailureStep(failureOccured, method);
+            return new FailureStep(method, storyAndScenarioMeta);
         }
     }
 
@@ -289,42 +282,6 @@ public class StepCreator {
         return tableParameter(namedParameters, name) != null;
     }
 
-    public interface StepRunner {
-
-        StepResult run(Method method, UUIDExceptionWrapper failureIfItHappened);
-
-    }
-
-    private class BeforeOrAfter implements StepRunner {
-
-        public StepResult run(Method method, UUIDExceptionWrapper failureIfItHappened) {
-            if (method == null) {
-                return failed(method, new UUIDExceptionWrapper(new BeforeOrAfterFailed(new NullPointerException(
-                        "method"))));
-            }
-            try {
-                Object stepsInstance = stepsInstance();
-                if (method.getParameterTypes().length == 0) {
-                    method.invoke(stepsInstance);
-                } else {
-                    method.invoke(stepsInstance, failureIfItHappened);
-                }
-            } catch (InvocationTargetException e) {
-                return failed(method, new UUIDExceptionWrapper(new BeforeOrAfterFailed(method, e.getCause())));
-            } catch (Throwable t) {
-                return failed(method, new UUIDExceptionWrapper(new BeforeOrAfterFailed(method, t)));
-            }
-            return skipped();
-        }
-    }
-
-    private class Skip implements StepRunner {
-
-        public StepResult run(Method method, UUIDExceptionWrapper failureIfItHappened) {
-            return skipped();
-        }
-    }
-
     public static Step createPendingStep(final String stepAsString, String previousNonAndStep) {
         return new PendingStep(stepAsString, previousNonAndStep);
     }
@@ -366,79 +323,85 @@ public class StepCreator {
 
     }
 
-    public class BeforeOrAfterStep extends AbstractStep {
+    private class BeforeOrAfterStep extends AbstractStep {
         private final Method method;
+        private final Meta meta;
 
-        public BeforeOrAfterStep(Method method) {
+        public BeforeOrAfterStep(Method method, Meta meta) {
             this.method = method;
-        }
-
-        public StepResult doNotPerform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return beforeOrAfter.run(method, NO_FAILURE);
+            this.meta = meta;
         }
 
         public StepResult perform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return beforeOrAfter.run(method, NO_FAILURE);
+            ParameterConverters paramConvertersWithExceptionInjector = paramConvertersWithExceptionInjector(storyFailureIfItHappened);
+            MethodInvoker methodInvoker = new MethodInvoker(method, paramConvertersWithExceptionInjector, paranamer, meta);
+
+            try {
+                methodInvoker.invoke();
+            } catch (InvocationTargetException e) {
+                return failed(method, new UUIDExceptionWrapper(new BeforeOrAfterFailed(method, e.getCause())));
+            } catch (Throwable t) {
+                return failed(method, new UUIDExceptionWrapper(new BeforeOrAfterFailed(method, t)));
+            }
+
+            return skipped();
         }
 
-    }
-
-    public class AnyOrDefaultStep extends AbstractStep {
-
-        private final Method method;
-
-        public AnyOrDefaultStep(Method method) {
-            this.method = method;
+        private ParameterConverters paramConvertersWithExceptionInjector(UUIDExceptionWrapper storyFailureIfItHappened) {
+            return parameterConverters.newInstanceAdding(new UUIDExceptionWrapperInjector(storyFailureIfItHappened));
         }
 
         public StepResult doNotPerform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return beforeOrAfter.run(method, NO_FAILURE);
+            return perform(storyFailureIfItHappened);
         }
 
-        public StepResult perform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return beforeOrAfter.run(method, NO_FAILURE);
-        }
+        private class UUIDExceptionWrapperInjector implements ParameterConverters.ParameterConverter {
+            private final UUIDExceptionWrapper storyFailureIfItHappened;
 
+            public UUIDExceptionWrapperInjector(UUIDExceptionWrapper storyFailureIfItHappened) {
+                this.storyFailureIfItHappened = storyFailureIfItHappened;
+            }
+
+            public boolean accept(Type type) {
+                return UUIDExceptionWrapper.class == type;
+            }
+
+            public Object convertValue(String value, Type type) {
+                return storyFailureIfItHappened;
+            }
+        }
     }
 
     public class SuccessStep extends AbstractStep {
+        private BeforeOrAfterStep beforeOrAfterStep;
 
-        private final boolean failureOccured;
-        private final Method method;
-
-        public SuccessStep(boolean failureOccured, Method method) {
-            this.failureOccured = failureOccured;
-            this.method = method;
+        public SuccessStep(Method method, Meta storyAndScenarioMeta) {
+            this.beforeOrAfterStep = new BeforeOrAfterStep(method, storyAndScenarioMeta);
         }
 
         public StepResult doNotPerform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return (failureOccured ? skip.run(method, NO_FAILURE) : beforeOrAfter.run(method, NO_FAILURE));
+            return skipped();
         }
 
         public StepResult perform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return (failureOccured ? skip.run(method, NO_FAILURE) : beforeOrAfter.run(method, NO_FAILURE));
+            return beforeOrAfterStep.perform(storyFailureIfItHappened);
         }
-
     }
 
     public class FailureStep extends AbstractStep {
+        private final BeforeOrAfterStep beforeOrAfterStep;
 
-        private final boolean failureOccured;
-        private final Method method;
-
-        public FailureStep(boolean failureOccured, Method method) {
-            this.failureOccured = failureOccured;
-            this.method = method;
+        public FailureStep(Method method, Meta storyAndScenarioMeta) {
+            this.beforeOrAfterStep = new BeforeOrAfterStep(method, storyAndScenarioMeta);
         }
 
         public StepResult doNotPerform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return (failureOccured ? beforeOrAfter.run(method, storyFailureIfItHappened) : skip.run(method, NO_FAILURE));
+            return beforeOrAfterStep.perform(storyFailureIfItHappened);
         }
 
         public StepResult perform(UUIDExceptionWrapper storyFailureIfItHappened) {
-            return (failureOccured ? beforeOrAfter.run(method, storyFailureIfItHappened) : skip.run(method, NO_FAILURE));
+            return skipped();
         }
-
     }
 
     public class ParameterizedStep extends AbstractStep {
@@ -472,17 +435,17 @@ public class StepCreator {
                 // step parametrisation failed, return pending StepResult
                 return pending(stepAsString).withParameterValues(parametrisedStep);
             } catch (InvocationTargetException e) {
-                if (e.getCause() instanceof RestartScenario) {
-                    throw (RestartScenario) e.getCause();
+                if (e.getCause() instanceof RestartingScenarioFailure) {
+                    throw (RestartingScenarioFailure) e.getCause();
                 }
-                if (e.getCause() instanceof UUIDExceptionWrapper) {
-                    return failed(stepAsString, ((UUIDExceptionWrapper) e.getCause())).withParameterValues(
-                            parametrisedStep);
+                Throwable failureCause = e.getCause();
+                if (failureCause instanceof UUIDExceptionWrapper) {
+                    failureCause = failureCause.getCause();
                 }
-                return failed(stepAsString, new UUIDExceptionWrapper(e.getCause())).withParameterValues(
+                return failed(stepAsString, new UUIDExceptionWrapper(stepAsString, failureCause)).withParameterValues(
                         parametrisedStep);
             } catch (Throwable t) {
-                return failed(stepAsString, new UUIDExceptionWrapper(t)).withParameterValues(parametrisedStep);
+                return failed(stepAsString, new UUIDExceptionWrapper(stepAsString, t)).withParameterValues(parametrisedStep);
             }
         }
 
@@ -562,4 +525,79 @@ public class StepCreator {
         }
     }
 
+    private class MethodInvoker {
+        private final Method method;
+        private final ParameterConverters parameterConverters;
+        private final Paranamer paranamer;
+        private final Meta meta;
+        private int methodArity;
+
+        public MethodInvoker(Method method, ParameterConverters parameterConverters, Paranamer paranamer, Meta meta) {
+            this.method = method;
+            this.parameterConverters = parameterConverters;
+            this.paranamer = paranamer;
+            this.meta = meta;
+            this.methodArity = method.getParameterTypes().length;
+        }
+
+        public void invoke() throws InvocationTargetException, IllegalAccessException {
+            method.invoke(stepsInstance(), parameterValuesFrom(meta));
+        }
+
+        private Parameter[] methodParameters() {
+            Parameter[] parameters = new Parameter[methodArity];
+            String[] annotationNamedParameters = annotatedParameterNames(method);
+            String[] parameterNames = paranamer.lookupParameterNames(method, false);
+            Class<?>[] parameterTypes = method.getParameterTypes();
+
+            for (int paramPosition = 0; paramPosition < methodArity; paramPosition++) {
+                String paramName = parameterNameFor(paramPosition, annotationNamedParameters, parameterNames);
+                parameters[paramPosition] = new Parameter(paramPosition, parameterTypes[paramPosition], paramName);
+            }
+
+            return parameters;
+        }
+
+        private String parameterNameFor(int paramPosition, String[] annotationNamedParameters, String[] parameterNames) {
+            String nameFromAnnotation = nameIfValidPositionInArray(annotationNamedParameters, paramPosition);
+            String parameterName = nameIfValidPositionInArray(parameterNames, paramPosition);
+            if (nameFromAnnotation != null) {
+                return nameFromAnnotation;
+            } else if (parameterName != null) {
+                return parameterName;
+            }
+            return null;
+        }
+
+        private String nameIfValidPositionInArray(String[] paramNames, int paramPosition) {
+            return paramPosition < paramNames.length ? paramNames[paramPosition] : null;
+        }
+
+        private Object[] parameterValuesFrom(Meta meta) {
+            Object[] values = new Object[methodArity];
+            for (Parameter parameter : methodParameters()) {
+                values[parameter.position] = parameterConverters.convert(parameter.valueFrom(meta), parameter.type);
+            }
+            return values;
+        }
+
+        private class Parameter {
+            private final int position;
+            private final Class<?> type;
+            private final String name;
+
+            public Parameter(int position, Class<?> type, String name) {
+                this.position = position;
+                this.type = type;
+                this.name = name;
+            }
+
+            public String valueFrom(Meta meta) {
+                if (name == null) {
+                    return null;
+                }
+                return meta.getProperty(name);
+            }
+        }
+    }
 }

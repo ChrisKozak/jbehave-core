@@ -8,7 +8,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.jbehave.core.RestartScenario;
+
 import org.jbehave.core.annotations.Given;
 import org.jbehave.core.annotations.Pending;
 import org.jbehave.core.annotations.When;
@@ -16,6 +16,7 @@ import org.jbehave.core.configuration.Configuration;
 import org.jbehave.core.configuration.Keywords;
 import org.jbehave.core.configuration.Keywords.StartingWordNotFound;
 import org.jbehave.core.configuration.MostUsefulConfiguration;
+import org.jbehave.core.failures.RestartingScenarioFailure;
 import org.jbehave.core.failures.UUIDExceptionWrapper;
 import org.jbehave.core.i18n.LocalizedKeywords;
 import org.jbehave.core.model.OutcomesTable;
@@ -31,12 +32,15 @@ import com.thoughtworks.paranamer.Paranamer;
 
 import static java.util.Arrays.asList;
 import static junit.framework.Assert.fail;
+
 import static org.hamcrest.MatcherAssert.assertThat;
+
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+
 import static org.jbehave.core.steps.StepCreator.PARAMETER_VALUE_END;
 import static org.jbehave.core.steps.StepCreator.PARAMETER_VALUE_START;
 import static org.jbehave.core.steps.StepType.GIVEN;
@@ -355,10 +359,12 @@ public class StepCandidateBehaviour {
         FailingSteps steps = new FailingSteps();
         List<StepCandidate> candidates = steps.listCandidates();
         assertThat(candidates.size(), equalTo(1));
-        StepResult stepResult = candidates.get(0).createMatchedStep("When outcome fails for Bar upon verification",
+        String stepAsString = "When outcome fails for Bar upon verification";
+        StepResult stepResult = candidates.get(0).createMatchedStep(stepAsString,
                 namedParameters).perform(null);
-        assertThat(stepResult.getFailure(), instanceOf(UUIDExceptionWrapper.class));
-        assertThat(stepResult.getFailure().getCause(), instanceOf(OutcomesFailed.class));
+        UUIDExceptionWrapper failure = stepResult.getFailure();
+        assertThat(failure.getCause(), instanceOf(OutcomesFailed.class));        
+        assertThat(failure.getMessage(), equalTo(stepAsString));        
     }
 
     @Test
@@ -369,7 +375,7 @@ public class StepCandidateBehaviour {
         try {
             candidates.get(0).createMatchedStep("When blah Bar blah", namedParameters).perform(null);
             fail("should have barfed");
-        } catch (RestartScenario e) {
+        } catch (RestartingScenarioFailure e) {
             assertThat(e.getMessage(), is(equalTo("Bar restarting")));
         }
     }
@@ -456,7 +462,7 @@ public class StepCandidateBehaviour {
 
         @When("blah $name blah")
         public void whenOutcomeFails(String name) {
-            throw new RestartScenario(name + " restarting");
+            throw new RestartingScenarioFailure(name + " restarting");
         }
 
     }

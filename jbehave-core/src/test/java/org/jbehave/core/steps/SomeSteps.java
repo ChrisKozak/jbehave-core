@@ -6,10 +6,14 @@ import java.beans.Introspector;
 import java.beans.MethodDescriptor;
 import java.lang.reflect.Method;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 
+import org.jbehave.core.annotations.BeforeScenario;
+import org.jbehave.core.annotations.Named;
 import org.jbehave.core.failures.PendingStepFound;
+import org.jbehave.core.failures.UUIDExceptionWrapper;
 import org.jbehave.core.model.ExamplesTable;
 
 public class SomeSteps extends Steps {
@@ -23,6 +27,11 @@ public class SomeSteps extends Steps {
     }
 
     public void aFailingMethod() {
+        throw new RuntimeException();
+    }
+
+    @BeforeScenario
+    public void aFailingBeforeScenarioMethod() {
         throw new RuntimeException();
     }
 
@@ -112,6 +121,21 @@ public class SomeSteps extends Steps {
 
     public void aMethodWithBooleanList(List<Boolean> value) {
         this.args = value;
+    }
+
+    public void aMethodWithANamedParameter(@Named("theme") String theme, @Named("variant") String variant) {
+        HashMap<String, Object> namedArgs = new HashMap<String, Object>();
+        namedArgs.put("theme", theme);
+        namedArgs.put("variant", variant);
+        this.args = namedArgs;
+    }
+
+    public void aMethodWithoutNamedAnnotation(String theme) {
+        this.args = theme;
+    }
+
+    public void aMethodThatExpectsUUIDExceptionWrapper(UUIDExceptionWrapper exception) {
+        this.args = exception;
     }
 
     public static Method methodFor(String methodName) throws IntrospectionException {

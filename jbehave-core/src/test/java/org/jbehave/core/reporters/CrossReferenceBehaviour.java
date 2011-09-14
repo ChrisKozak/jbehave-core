@@ -1,13 +1,6 @@
 package org.jbehave.core.reporters;
 
 import com.thoughtworks.xstream.XStream;
-import org.jbehave.core.model.StepPattern;
-import org.jbehave.core.model.Story;
-import org.jbehave.core.reporters.FilePrintStreamFactory.FilePathResolver;
-import org.jbehave.core.reporters.FilePrintStreamFactory.ResolveToPackagedName;
-import org.jbehave.core.steps.StepType;
-import org.junit.Test;
-
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -17,6 +10,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jbehave.core.model.StepPattern;
+import org.jbehave.core.model.Story;
+import org.jbehave.core.reporters.FilePrintStreamFactory.FilePathResolver;
+import org.jbehave.core.reporters.FilePrintStreamFactory.ResolveToPackagedName;
+import org.jbehave.core.steps.StepType;
+import org.junit.Test;
 
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertTrue;
@@ -159,7 +158,6 @@ public class CrossReferenceBehaviour {
                 "}}", output.get(1).toString().replace('\"', '\'').replaceAll("[0-9]{8,15}", "NUMBER").replaceAll("duration': [0-9]*", "duration': TIME")); // json
         assertEquals(2, output.size());
 
-
     }
 
     @Test
@@ -264,7 +262,6 @@ public class CrossReferenceBehaviour {
 
     }
 
-
     @Test
     public void shouldProduceJsonOutputsOfStoriesAndSteps() throws Exception {
 
@@ -338,7 +335,7 @@ public class CrossReferenceBehaviour {
                 "      'scenarios': '',\n" +
                 "      'passed': false,\n" +
                 "      'started': NUMBER,\n" +
-                "      'duration': 1\n" +
+                "      'duration': TIME\n" +
                 "    }\n" +
                 "  ],\n" +
                 "  'stepMatches': [\n" +
@@ -355,7 +352,7 @@ public class CrossReferenceBehaviour {
                 "      ]\n" +
                 "    }\n" +
                 "  ]\n" +
-                "}}", output.get(0).toString().replace('\"', '\'').replaceAll("[0-9]{8,15}", "NUMBER").replace("duration': 0", "duration': 1")); // json
+                "}}", output.get(0).toString().replace('\"', '\'').replaceAll("[0-9]{8,15}", "NUMBER").replaceAll("duration': [0-9]*", "duration': TIME")); // json
 
         assertEquals(1, output.size());
 
@@ -437,7 +434,7 @@ public class CrossReferenceBehaviour {
                 "      <scenarios></scenarios>\n" +
                 "      <passed>false</passed>\n" +
                 "      <started>NUMBER</started>\n" +
-                "      <duration>1</duration>\n" +
+                "      <duration>TIME</duration>\n" +
                 "      <theme>testing</theme>\n" +
                 "    </story>\n" +
                 "  </stories>\n" +
@@ -458,7 +455,7 @@ public class CrossReferenceBehaviour {
                 "  <themes>\n" +
                 "    <string>testing</string>\n" +
                 "  </themes>\n" +
-                "</xref>", output.get(0).toString().replaceAll("[0-9]{8,15}", "NUMBER").replace("<duration>0</duration>", "<duration>1</duration>")); // xml
+                "</xref>", output.get(0).toString().replaceAll("[0-9]{8,15}", "NUMBER").replaceAll("<duration>[0-9]*</duration>", "<duration>TIME</duration>")); // xml
 
         assertEquals("{'xref': {\n" +
                 "  'whenMade': NUMBER,\n" +
@@ -478,7 +475,7 @@ public class CrossReferenceBehaviour {
                 "      'scenarios': '',\n" +
                 "      'passed': false,\n" +
                 "      'started': NUMBER,\n" +
-                "      'duration': 1,\n" +
+                "      'duration': TIME,\n" +
                 "      'theme': 'testing'\n" +
                 "    }\n" +
                 "  ],\n" +
@@ -499,7 +496,7 @@ public class CrossReferenceBehaviour {
                 "  'themes': [\n" +
                 "    'testing'\n" +
                 "  ]\n" +
-                "}}", output.get(1).toString().replace('\"', '\'').replaceAll("[0-9]{8,15}", "NUMBER").replace("duration': 0", "duration': 1")); // json
+                "}}", output.get(1).toString().replace('\"', '\'').replaceAll("[0-9]{8,15}", "NUMBER").replaceAll("duration': [0-9]*", "duration': TIME")); // json
 
     }
 
@@ -524,7 +521,6 @@ public class CrossReferenceBehaviour {
             return new XRefStoryWithTheme(story, storyReporterBuilder, passed, themes);
         }
     }
-    
 
     private static class XRefRootWithoutThemes extends CrossReference.XRefRoot {
 

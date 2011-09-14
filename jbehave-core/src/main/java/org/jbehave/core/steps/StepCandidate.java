@@ -149,6 +149,8 @@ public class StepCandidate {
             StepCandidate candidate = findComposedCandidate(composedStep, allCandidates);
             if ( candidate != null ){
                 steps.add(candidate.createMatchedStep(composedStep, matchedParameters));
+            } else {
+                steps.add(StepCreator.createPendingStep(composedStep, null));
             }
         }
         return steps;
@@ -166,6 +168,10 @@ public class StepCandidate {
 
     public boolean isAndStep(String stepAsString) {
         return keywords.isAndStep(stepAsString);
+    }
+
+    public boolean isIgnorableStep(String stepAsString) {
+        return keywords.isIgnorableStep(stepAsString);
     }
 
     private String findStartingWord(String stepAsString) {

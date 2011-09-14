@@ -1,15 +1,21 @@
 package org.jbehave.core.reporters;
 
-import org.apache.commons.lang.builder.ToStringBuilder;
-import org.apache.commons.lang.builder.ToStringStyle;
-import org.jbehave.core.model.*;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang.builder.ToStringStyle;
+import org.jbehave.core.model.ExamplesTable;
+import org.jbehave.core.model.GivenStories;
+import org.jbehave.core.model.Meta;
+import org.jbehave.core.model.Narrative;
+import org.jbehave.core.model.OutcomesTable;
+import org.jbehave.core.model.Scenario;
+import org.jbehave.core.model.Story;
 
 import static java.util.Arrays.asList;
 
@@ -33,6 +39,7 @@ public class PostStoryStatisticsCollector implements StoryReporter {
     private OutcomesTable outcomesFailed;
     private int givenStories;
     private long storyStartTime;
+    private boolean currentScenarioNotAllowed;
 
     public PostStoryStatisticsCollector(OutputStream output) {
         this.output = output;
@@ -121,6 +128,7 @@ public class PostStoryStatisticsCollector implements StoryReporter {
     public void beforeScenario(String title) {
         cause = null;
         outcomesFailed = null;
+        currentScenarioNotAllowed = false;
         reset("currentScenarioSteps");
         reset("currentScenarioStepsPending");
     }
@@ -130,6 +138,7 @@ public class PostStoryStatisticsCollector implements StoryReporter {
             add("givenStoryScenariosNotAllowed");
         } else {
             add("scenariosNotAllowed");
+            currentScenarioNotAllowed = true;
         }
     }
 
@@ -142,7 +151,7 @@ public class PostStoryStatisticsCollector implements StoryReporter {
         } else {
             countScenarios("scenarios");
         }
-        if (has("currentScenarioStepsPending") || !has("currentScenarioSteps")) {
+        if (has("currentScenarioStepsPending") || (!has("currentScenarioSteps") && !currentScenarioNotAllowed)) {
             if (givenStories > 0) {
                 add("givenStoryScenariosPending");
             } else {
@@ -153,10 +162,12 @@ public class PostStoryStatisticsCollector implements StoryReporter {
 
     private void countScenarios(String namespace) {
         add(namespace);
-        if (cause != null || outcomesFailed != null) {
-            add(namespace + "Failed");
-        } else {
-            add(namespace + "Successful");
+        if (!currentScenarioNotAllowed){
+	        if (cause != null || outcomesFailed != null) {
+	            add(namespace + "Failed");
+	        } else {
+	            add(namespace + "Successful");
+	        }
         }
     }
 
@@ -174,6 +185,12 @@ public class PostStoryStatisticsCollector implements StoryReporter {
     }
 
     public void pendingMethods(List<String> methods) {
+    }
+
+    public void restarted(String step, Throwable cause) {
+    }
+
+    public void cancelled() {
     }
 
     private void add(String event) {

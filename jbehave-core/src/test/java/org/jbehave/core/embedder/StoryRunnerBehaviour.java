@@ -1,6 +1,11 @@
 package org.jbehave.core.embedder;
 
-import org.jbehave.core.RestartScenario;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.jbehave.core.annotations.ScenarioType;
 import org.jbehave.core.configuration.Configuration;
 import org.jbehave.core.configuration.MostUsefulConfiguration;
 import org.jbehave.core.failures.FailingUponPendingStep;
@@ -8,6 +13,7 @@ import org.jbehave.core.failures.FailureStrategy;
 import org.jbehave.core.failures.PassingUponPendingStep;
 import org.jbehave.core.failures.PendingStepFound;
 import org.jbehave.core.failures.PendingStepStrategy;
+import org.jbehave.core.failures.RestartingScenarioFailure;
 import org.jbehave.core.failures.RethrowingFailure;
 import org.jbehave.core.failures.UUIDExceptionWrapper;
 import org.jbehave.core.io.LoadFromClasspath;
@@ -34,11 +40,6 @@ import org.junit.Test;
 import org.mockito.InOrder;
 import org.mockito.Matchers;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import static java.util.Arrays.asList;
 import static org.jbehave.core.steps.AbstractStepResult.failed;
 import static org.jbehave.core.steps.AbstractStepResult.notPerformed;
@@ -46,12 +47,12 @@ import static org.jbehave.core.steps.AbstractStepResult.pending;
 import static org.jbehave.core.steps.AbstractStepResult.successful;
 import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Matchers.isA;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 public class StoryRunnerBehaviour {
@@ -253,7 +254,7 @@ public class StoryRunnerBehaviour {
         // Given
         StoryReporter reporter = mock(ConcurrentStoryReporter.class);
         Step firstStepNormal = mockSuccessfulStep("Given I succeed");
-        final RestartScenario hi = new RestartScenario("hi");
+        final RestartingScenarioFailure hi = new RestartingScenarioFailure("hi");
         Step restartStep = new Step() {
             private int count = 0;
             public StepResult perform(UUIDExceptionWrapper storyFailureIfItHappened) {
@@ -288,7 +289,7 @@ public class StoryRunnerBehaviour {
         runner.run(configurationWith(reporter, collector), asList(mySteps), story);
 
         verify(reporter, times(2)).successful("Given I succeed");
-        verify(reporter).failed("<fooStep>", hi);
+        verify(reporter).restarted(eq("<fooStep>"), isA(RestartingScenarioFailure.class));
         verify(reporter).successful("When happened on second attempt");
         verify(reporter).successful("Then I succeeded");
     }
@@ -395,9 +396,8 @@ public class StoryRunnerBehaviour {
 
         Step beforeStep = mockSuccessfulStep("SuccessfulBeforeScenarioStep");
         Step afterStep = mockSuccessfulStep("SuccessfulAfterScenarioStep");
-        boolean failureOccured = false;
-        when(collector.collectBeforeOrAfterScenarioSteps(asList(mySteps), Stage.BEFORE, failureOccured)).thenReturn(asList(beforeStep));
-        when(collector.collectBeforeOrAfterScenarioSteps(asList(mySteps), Stage.AFTER, failureOccured)).thenReturn(asList(afterStep));
+        when(collector.collectBeforeOrAfterScenarioSteps(eq(asList(mySteps)), Matchers.<Meta>any(), eq(Stage.BEFORE), eq(ScenarioType.NORMAL))).thenReturn(asList(beforeStep));
+        when(collector.collectBeforeOrAfterScenarioSteps(eq(asList(mySteps)), Matchers.<Meta>any(), eq(Stage.AFTER), eq(ScenarioType.NORMAL))).thenReturn(asList(afterStep));
 
         // When
         StoryRunner runner = new StoryRunner();

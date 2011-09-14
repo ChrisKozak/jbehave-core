@@ -2,61 +2,68 @@ package org.jbehave.core.steps;
 
 import java.beans.IntrospectionException;
 import java.lang.reflect.Method;
+import java.util.Date;
+import java.util.Map;
+import java.util.Properties;
 
+import org.jbehave.core.annotations.AfterScenario;
 import org.jbehave.core.configuration.MostUsefulConfiguration;
 import org.jbehave.core.failures.BeforeOrAfterFailed;
 import org.jbehave.core.failures.UUIDExceptionWrapper;
+import org.jbehave.core.model.Meta;
 import org.jbehave.core.parsers.StepMatcher;
 import org.jbehave.core.steps.AbstractStepResult.Failed;
 import org.jbehave.core.steps.AbstractStepResult.Ignorable;
 import org.jbehave.core.steps.AbstractStepResult.Pending;
+import org.jbehave.core.steps.AbstractStepResult.Skipped;
 import org.jbehave.core.steps.StepCreator.ParameterNotFound;
+import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Matchers;
+
+import com.thoughtworks.paranamer.BytecodeReadingParanamer;
+import com.thoughtworks.paranamer.CachingParanamer;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 
 import static org.hamcrest.Matchers.instanceOf;
+import static org.hamcrest.Matchers.is;
 
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 
 public class StepCreatorBehaviour {
-    
+
+    private ParameterConverters parameterConverters = mock(ParameterConverters.class);
+
+    @Before
+    public void setUp() throws Exception {
+        when(parameterConverters.convert("shopping cart", String.class)).thenReturn("shopping cart");
+        when(parameterConverters.convert("book", String.class)).thenReturn("book");
+        when(parameterConverters.newInstanceAdding(Matchers.<ParameterConverters.ParameterConverter>anyObject())).thenReturn(parameterConverters);
+    }
+
     @Test
     public void shouldHandleTargetInvocationFailureInBeforeOrAfterStep() throws IntrospectionException {
         // Given
         SomeSteps stepsInstance = new SomeSteps();
-        InjectableStepsFactory stepsFactory = new InstanceStepsFactory(new MostUsefulConfiguration(), stepsInstance);
-        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, new SilentStepMonitor());
+        MostUsefulConfiguration configuration = new MostUsefulConfiguration();
+        InjectableStepsFactory stepsFactory = new InstanceStepsFactory(configuration, stepsInstance);
+        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, configuration.parameterConverters(), null, new SilentStepMonitor());
 
         // When
-        Method method = SomeSteps.methodFor("aFailingMethod");
-        StepResult stepResult = stepCreator.createBeforeOrAfterStep(method).perform(null);
+        Method method = SomeSteps.methodFor("aFailingBeforeScenarioMethod");
+        StepResult stepResult = stepCreator.createBeforeOrAfterStep(method, Meta.EMPTY).perform(null);
 
         // Then
         assertThat(stepResult, instanceOf(Failed.class));
         assertThat(stepResult.getFailure(), instanceOf(UUIDExceptionWrapper.class));
-        assertThat(stepResult.getFailure().getCause(), instanceOf(BeforeOrAfterFailed.class));
-
-    }
-
-    @Test
-    public void shouldHandleFailureInBeforeOrAfterStep() throws IntrospectionException {
-        // Given
-        SomeSteps stepsInstance = new SomeSteps();
-        InjectableStepsFactory stepsFactory = new InstanceStepsFactory(new MostUsefulConfiguration(), stepsInstance);
-        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, new SilentStepMonitor());
-
-        // When
-        Method method = null;
-        StepResult stepResult = stepCreator.createBeforeOrAfterStep(method).perform(null);
-
-        // Then
-        assertThat(stepResult, instanceOf(Failed.class));
-        assertThat(stepResult.getFailure(), instanceOf(UUIDExceptionWrapper.class));
-        assertThat(stepResult.getFailure().getCause(), instanceOf(BeforeOrAfterFailed.class));
-
+        Throwable cause = stepResult.getFailure().getCause();
+        assertThat(cause, instanceOf(BeforeOrAfterFailed.class));
+        assertThat(cause.getMessage(), org.hamcrest.Matchers.equalTo("Method aFailingBeforeScenarioMethod (annotated with @BeforeScenario in class org.jbehave.core.steps.SomeSteps) failed: java.lang.RuntimeException"));
     }
 
     @Test
@@ -64,7 +71,7 @@ public class StepCreatorBehaviour {
         // Given
         SomeSteps stepsInstance = new SomeSteps();
         InjectableStepsFactory stepsFactory = new InstanceStepsFactory(new MostUsefulConfiguration(), stepsInstance);
-        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, new SilentStepMonitor());
+        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, null, null, new SilentStepMonitor());
 
         // When
         Method method = SomeSteps.methodFor("aFailingMethod");
@@ -79,7 +86,7 @@ public class StepCreatorBehaviour {
         // Given
         SomeSteps stepsInstance = new SomeSteps();
         InjectableStepsFactory stepsFactory = new InstanceStepsFactory(new MostUsefulConfiguration(), stepsInstance);
-        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, new SilentStepMonitor());
+        StepCreator stepCreator = new StepCreator(stepsInstance.getClass(), stepsFactory, null, null, new SilentStepMonitor());
 
         // When
         Method method = null;
@@ -117,4 +124,214 @@ public class StepCreatorBehaviour {
         assertThat(pendingStep.doNotPerform(null), instanceOf(Pending.class));
     }
 
+    @Test
+    public void shouldInvokeBeforeOrAfterStepMethodWithExpectedParametersFromMeta() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+        Properties properties = new Properties();
+        properties.put("theme", "shopping cart");
+        properties.put("variant", "book");
+
+        // When
+        Step stepWithMeta = stepCreator.createBeforeOrAfterStep(SomeSteps.methodFor("aMethodWithANamedParameter"), new Meta(properties));
+        StepResult stepResult = stepWithMeta.perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat(stepsInstance.args, instanceOf(Map.class));
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> methodArgs = (Map<String, String>) stepsInstance.args;
+        assertThat(methodArgs.get("variant"), is("book"));
+        assertThat(methodArgs.get("theme"), is("shopping cart"));
+    }
+
+    @Test
+    public void shouldInvokeBeforeOrAfterStepMethodWithMetaUsingParanamer() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+        stepCreator.useParanamer(new CachingParanamer(new BytecodeReadingParanamer()));
+        Properties properties = new Properties();
+        properties.put("theme", "shopping cart");
+
+        // When
+        Step stepWithMeta = stepCreator.createBeforeOrAfterStep(SomeSteps.methodFor("aMethodWithoutNamedAnnotation"), new Meta(properties));
+        StepResult stepResult = stepWithMeta.perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat((String) stepsInstance.args, is("shopping cart"));
+    }
+
+    @Test
+    public void shouldHandleFailureInBeforeOrAfterStepWithMeta() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+
+        // When
+        Method method = SomeSteps.methodFor("aFailingMethod");
+        StepResult stepResult = stepCreator.createBeforeOrAfterStep(method, Meta.EMPTY).perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Failed.class));
+        assertThat(stepResult.getFailure(), instanceOf(UUIDExceptionWrapper.class));
+        assertThat(stepResult.getFailure().getCause(), instanceOf(BeforeOrAfterFailed.class));
+    }
+
+    @Test
+    public void shouldInvokeAfterStepUponAnyOutcomeMethodWithExpectedParametersFromMeta() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+        Properties properties = new Properties();
+        properties.put("theme", "shopping cart");
+        properties.put("variant", "book");
+
+        // When
+        Step stepWithMeta = stepCreator.createAfterStepUponOutcome(SomeSteps.methodFor("aMethodWithANamedParameter"), AfterScenario.Outcome.ANY, new Meta(properties));
+        StepResult stepResult = stepWithMeta.perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat(stepsInstance.args, instanceOf(Map.class));
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> methodArgs = (Map<String, String>) stepsInstance.args;
+        assertThat(methodArgs.get("variant"), is("book"));
+        assertThat(methodArgs.get("theme"), is("shopping cart"));
+    }
+
+    @Test
+    public void shouldNotInvokeAfterStepUponSuccessOutcomeMethodIfFailureOccurred() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+
+        // When
+        Step stepWithMeta = stepCreator.createAfterStepUponOutcome(SomeSteps.methodFor("aFailingMethod"), AfterScenario.Outcome.SUCCESS, mock(Meta.class));
+        StepResult stepResult = stepWithMeta.doNotPerform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+    }
+
+    @Test
+    public void shouldInvokeAfterStepUponSuccessOutcomeMethodIfNoFailureOccurred() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+        Properties properties = new Properties();
+        properties.put("theme", "shopping cart");
+        properties.put("variant", "book");
+
+        // When
+        Step stepWithMeta = stepCreator.createAfterStepUponOutcome(SomeSteps.methodFor("aMethodWithANamedParameter"), AfterScenario.Outcome.SUCCESS, new Meta(properties));
+        StepResult stepResult = stepWithMeta.perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat(stepsInstance.args, instanceOf(Map.class));
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> methodArgs = (Map<String, String>) stepsInstance.args;
+        assertThat(methodArgs.get("variant"), is("book"));
+        assertThat(methodArgs.get("theme"), is("shopping cart"));
+    }
+
+    @Test
+    public void shouldNotInvokeAfterStepUponFailureOutcomeMethodIfNoFailureOccurred() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+
+        // When
+        Step stepWithMeta = stepCreator.createAfterStepUponOutcome(SomeSteps.methodFor("aFailingMethod"), AfterScenario.Outcome.FAILURE, mock(Meta.class));
+        StepResult stepResult = stepWithMeta.perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+    }
+
+    @Test
+    public void shouldInvokeAfterStepUponFailureOutcomeMethodIfFailureOccurred() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+        Properties properties = new Properties();
+        properties.put("theme", "shopping cart");
+        properties.put("variant", "book");
+
+        // When
+        Step stepWithMeta = stepCreator.createAfterStepUponOutcome(SomeSteps.methodFor("aMethodWithANamedParameter"), AfterScenario.Outcome.FAILURE, new Meta(properties));
+        StepResult stepResult = stepWithMeta.doNotPerform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat(stepsInstance.args, instanceOf(Map.class));
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> methodArgs = (Map<String, String>) stepsInstance.args;
+        assertThat(methodArgs.get("variant"), is("book"));
+        assertThat(methodArgs.get("theme"), is("shopping cart"));
+    }
+
+    @Test
+    public void shouldInvokeBeforeOrAfterStepMethodWithExpectedConvertedParametersFromMeta() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+        stepCreator.useParanamer(new CachingParanamer(new BytecodeReadingParanamer()));
+
+        // When
+        Date aDate = new Date();
+        when(parameterConverters.convert(anyString(), eq(Date.class))).thenReturn(aDate);
+        Step stepWithMeta = stepCreator.createBeforeOrAfterStep(SomeSteps.methodFor("aMethodWithDate"), new Meta());
+        StepResult stepResult = stepWithMeta.perform(null);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat((Date) stepsInstance.args, is(aDate));
+    }
+
+    @Test
+    public void shouldInjectExceptionThatHappenedIfTargetMethodExpectsIt() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        parameterConverters = new ParameterConverters();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+
+        // When
+        Step stepWithMeta = stepCreator.createBeforeOrAfterStep(SomeSteps.methodFor("aMethodThatExpectsUUIDExceptionWrapper"), mock(Meta.class));
+        UUIDExceptionWrapper occurredFailure = new UUIDExceptionWrapper();
+        StepResult stepResult = stepWithMeta.perform(occurredFailure);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat((UUIDExceptionWrapper) stepsInstance.args, is(occurredFailure));
+    }
+
+    @Test
+    public void shouldInjectNoFailureIfNoExceptionHappenedAndTargetMethodExpectsIt() throws Exception {
+        // Given
+        SomeSteps stepsInstance = new SomeSteps();
+        parameterConverters = new ParameterConverters();
+        StepCreator stepCreator = stepCreatorUsing(stepsInstance);
+
+        // When
+        Step stepWithMeta = stepCreator.createBeforeOrAfterStep(SomeSteps.methodFor("aMethodThatExpectsUUIDExceptionWrapper"), mock(Meta.class));
+        UUIDExceptionWrapper occurredFailure = new UUIDExceptionWrapper();
+        StepResult stepResult = stepWithMeta.perform(occurredFailure);
+
+        // Then
+        assertThat(stepResult, instanceOf(Skipped.class));
+        assertThat((UUIDExceptionWrapper) stepsInstance.args, is(occurredFailure));
+    }
+
+    private StepCreator stepCreatorUsing(final SomeSteps stepsInstance) {
+        InjectableStepsFactory stepsFactory = new InstanceStepsFactory(new MostUsefulConfiguration(), stepsInstance);
+        return new StepCreator(stepsInstance.getClass(), stepsFactory, parameterConverters, mock(StepMatcher.class), new SilentStepMonitor());
+    }
 }

@@ -77,4 +77,9 @@ public class NullStoryReporter implements StoryReporter {
     public void pendingMethods(List<String> methods) {
     }
 
+    public void restarted(String step, Throwable cause) {
+    }
+
+    public void cancelled() {
+    }
 }

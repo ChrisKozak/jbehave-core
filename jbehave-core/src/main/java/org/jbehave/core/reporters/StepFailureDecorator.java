@@ -115,5 +115,12 @@ public class StepFailureDecorator implements StoryReporter {
     public void pendingMethods(List<String> methods) {
         delegate.pendingMethods(methods);
     }
-    
+
+    public void restarted(String step, Throwable cause) {
+        delegate.restarted(step, cause);
+    }
+
+    public void cancelled() {
+        delegate.cancelled();
+    }
 }

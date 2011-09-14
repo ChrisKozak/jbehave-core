@@ -1,9 +1,19 @@
 package org.jbehave.core.embedder;
 
-import org.jbehave.core.RestartScenario;
+import org.jbehave.core.annotations.ScenarioType;
 import org.jbehave.core.configuration.Configuration;
-import org.jbehave.core.failures.*;
-import org.jbehave.core.model.*;
+import org.jbehave.core.failures.FailureStrategy;
+import org.jbehave.core.failures.PendingStepFound;
+import org.jbehave.core.failures.PendingStepStrategy;
+import org.jbehave.core.failures.RestartingScenarioFailure;
+import org.jbehave.core.failures.SilentlyAbsorbingFailure;
+import org.jbehave.core.failures.UUIDExceptionWrapper;
+import org.jbehave.core.model.ExamplesTable;
+import org.jbehave.core.model.GivenStories;
+import org.jbehave.core.model.GivenStory;
+import org.jbehave.core.model.Meta;
+import org.jbehave.core.model.Scenario;
+import org.jbehave.core.model.Story;
 import org.jbehave.core.reporters.ConcurrentStoryReporter;
 import org.jbehave.core.reporters.StoryReporter;
 import org.jbehave.core.steps.*;
@@ -65,7 +75,7 @@ public class StoryRunner {
             try {
                 currentStrategy.get().handleFailure(storyFailure.get());
             } catch (Throwable e) {
-                return new SomethingHappened();
+                return new SomethingHappened(storyFailure.get());
             } finally {
                 if (reporter.get() instanceof ConcurrentStoryReporter) {
                     ((ConcurrentStoryReporter) reporter.get()).invokeDelayed();
@@ -163,6 +173,15 @@ public class StoryRunner {
     }
 
     private void run(RunContext context, Story story, Map<String, String> storyParameters) throws Throwable {
+        try {
+            runIt(context, story, storyParameters);
+        } catch (InterruptedException interruptedException) {
+            reporter.get().cancelled();
+            throw interruptedException;
+        }
+    }
+
+    private void runIt(RunContext context, Story story, Map<String, String> storyParameters) throws Throwable {
         if (!context.givenStory) {
             reporter.set(reporterFor(context, story));
         }
@@ -208,7 +227,8 @@ public class StoryRunner {
                     reporter.get().beforeScenario(scenario.getTitle());
                     reporter.get().scenarioMeta(scenario.getMeta());
 
-                    if (context.metaNotAllowed(scenario.getMeta().inheritFrom(story.getMeta()))) {
+                    Meta storyAndScenarioMeta = scenario.getMeta().inheritFrom(story.getMeta());
+                    if (context.metaNotAllowed(storyAndScenarioMeta)) {
                         reporter.get().scenarioNotAllowed(scenario, context.metaFilterAsString());
                         scenarioAllowed = false;
                     }
@@ -219,22 +239,22 @@ public class StoryRunner {
                         }
                         // run before scenario steps, if allowed
                         if (runBeforeAndAfterScenarioSteps) {
-                            runBeforeOrAfterScenarioSteps(context, scenario, Stage.BEFORE);
+                            runBeforeOrAfterScenarioSteps(context, scenario, storyAndScenarioMeta, Stage.BEFORE, ScenarioType.NORMAL);
                         }
 
                         // run given stories, if any
                         runGivenStories(scenario, context);
                         if (isParameterisedByExamples(scenario)) {
                             // run parametrised scenarios by examples
-                            runParametrisedScenariosByExamples(context, scenario);
+                            runParametrisedScenariosByExamples(context, scenario, storyAndScenarioMeta);
                         } else { // run as plain old scenario
-                            addMetaParameters(storyParameters, scenario.getMeta().inheritFrom(story.getMeta()));
+                            addMetaParameters(storyParameters, storyAndScenarioMeta);
                             runScenarioSteps(context, scenario, storyParameters);
                         }
 
                         // run after scenario steps, if allowed
                         if (runBeforeAndAfterScenarioSteps) {
-                            runBeforeOrAfterScenarioSteps(context, scenario, Stage.AFTER);
+                            runBeforeOrAfterScenarioSteps(context, scenario, storyAndScenarioMeta, Stage.AFTER, ScenarioType.NORMAL);
                         }
 
                     }
@@ -316,7 +336,7 @@ public class StoryRunner {
         return scenario.getExamplesTable().getRowCount() > 0 && !scenario.getGivenStories().requireParameters();
     }
 
-    private void runParametrisedScenariosByExamples(RunContext context, Scenario scenario) {
+    private void runParametrisedScenariosByExamples(RunContext context, Scenario scenario, Meta storyAndScenarioMeta) {
         ExamplesTable table = scenario.getExamplesTable();
         reporter.get().beforeExamples(scenario.getSteps(), table);
         for (Map<String, String> scenarioParameters : table.getRows()) {
@@ -324,7 +344,9 @@ public class StoryRunner {
             if (context.configuration().storyControls().resetStateBeforeScenario()) {
                 context.resetState();
             }
+            runBeforeOrAfterScenarioSteps(context, scenario, storyAndScenarioMeta, Stage.BEFORE, ScenarioType.EXAMPLE);
             runScenarioSteps(context, scenario, scenarioParameters);
+            runBeforeOrAfterScenarioSteps(context, scenario, storyAndScenarioMeta, Stage.AFTER, ScenarioType.EXAMPLE);
         }
         reporter.get().afterExamples();
     }
@@ -333,19 +355,19 @@ public class StoryRunner {
         runStepsWhileKeepingState(context, context.collectBeforeOrAfterStorySteps(story, stage));
     }
 
-    private void runBeforeOrAfterScenarioSteps(RunContext context, Scenario scenario, Stage stage) {
-        runStepsWhileKeepingState(context, context.collectBeforeOrAfterScenarioSteps(stage));
+    private void runBeforeOrAfterScenarioSteps(RunContext context, Scenario scenario, Meta storyAndScenarioMeta, Stage stage, ScenarioType type) {
+        runStepsWhileKeepingState(context, context.collectBeforeOrAfterScenarioSteps(storyAndScenarioMeta, stage, type));
     }
 
     private void runScenarioSteps(RunContext context, Scenario scenario, Map<String, String> scenarioParameters) {
-        boolean again = true;
-        while (again) {
-            again = false;
+        boolean restart = true;
+        while (restart) {
+            restart = false;
             List<Step> steps = context.collectScenarioSteps(scenario, scenarioParameters);
             try {
                 runStepsWhileKeepingState(context, steps);
-            } catch (RestartScenario re) {
-                again = true;
+            } catch (RestartingScenarioFailure e) {
+                restart = true;
                 continue;
             }
             generatePendingStepMethods(context, steps);
@@ -380,15 +402,15 @@ public class StoryRunner {
             SoftAssertionLog.reset();
             try {
                 state = state.run(step);
-            } catch (RestartScenario rs) {
-                reporter.get().failed(step.toString(), rs);
-                throw rs;
+            } catch (RestartingScenarioFailure e) {
+                reporter.get().restarted(step.toString(), e);
+                throw e;
             }
         }
         context.stateIs(state);
     }
 
-    interface State {
+    public interface State {
         State run(Step step);
     }
 
@@ -412,7 +434,7 @@ public class StoryRunner {
 
             storyFailure.set(mostImportantOf(storyFailureIfItHappened, stepFailure));
             currentStrategy.set(strategyFor(storyFailure.get()));
-            return new SomethingHappened();
+            return new SomethingHappened(stepFailure);
         }
 
         private UUIDExceptionWrapper mostImportantOf(UUIDExceptionWrapper failure1, UUIDExceptionWrapper failure2) {
@@ -433,10 +455,15 @@ public class StoryRunner {
     private class SoftFailureHappened extends FineSoFar {
     }
 
-    private final class SomethingHappened implements State {
+    private final class SomethingHappened implements State { 
+        UUIDExceptionWrapper scenarioFailure;
+        
+        public SomethingHappened(UUIDExceptionWrapper scenarioFailure) {
+            this.scenarioFailure = scenarioFailure;
+        }
+
         public State run(Step step) {
-            UUIDExceptionWrapper storyFailureIfItHappened = storyFailure.get();
-            StepResult result = step.doNotPerform(storyFailureIfItHappened);
+            StepResult result = step.doNotPerform(scenarioFailure);
             result.describeTo(reporter.get());
             return this;
         }
@@ -506,13 +533,11 @@ public class StoryRunner {
         }
 
         public List<Step> collectBeforeOrAfterStorySteps(Story story, Stage stage) {
-            return configuration.stepCollector().collectBeforeOrAfterStorySteps(candidateSteps, story, stage,
-                    givenStory);
+            return configuration.stepCollector().collectBeforeOrAfterStorySteps(candidateSteps, story, stage, givenStory);
         }
 
-        public List<Step> collectBeforeOrAfterScenarioSteps(Stage stage) {
-            return configuration.stepCollector().collectBeforeOrAfterScenarioSteps(candidateSteps, stage,
-                    failureOccurred());
+        public List<Step> collectBeforeOrAfterScenarioSteps(Meta storyAndScenarioMeta, Stage stage, ScenarioType type) {
+            return configuration.stepCollector().collectBeforeOrAfterScenarioSteps(candidateSteps, storyAndScenarioMeta, stage, type);
         }
 
         public List<Step> collectScenarioSteps(Scenario scenario, Map<String, String> parameters) {
@@ -544,5 +569,12 @@ public class StoryRunner {
 
     public boolean failed(State state) {
         return !state.getClass().equals(FineSoFar.class);
+    }
+    
+    public Throwable failure(State state){
+        if ( failed(state ) ){
+            return ((SomethingHappened)state).scenarioFailure.getCause();
+        }
+        return null;
     }
 }

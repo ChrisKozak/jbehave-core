@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import org.apache.commons.lang.StringUtils;
 import org.jbehave.core.configuration.Keywords;
 import org.jbehave.core.model.ExamplesTable;
@@ -37,8 +36,8 @@ public class TemplateableOutput implements StoryReporter {
     private final Keywords keywords;
     private final TemplateProcessor processor;
     private final String templatePath;
-    private OutputStory outputStory;
-    private OutputScenario outputScenario;
+    private OutputStory outputStory = new OutputStory();
+    private OutputScenario outputScenario = new OutputScenario();
     private OutputStep failedStep;
 
     public TemplateableOutput(File file, Keywords keywords, TemplateProcessor processor, String templatePath) {
@@ -141,6 +140,13 @@ public class TemplateableOutput implements StoryReporter {
 
     public void pendingMethods(List<String> methods) {
         this.outputStory.pendingMethods = methods;
+    }
+
+    public void restarted(String step, Throwable cause) {
+        this.outputScenario.addStep(new OutputRestart(step, cause.getMessage()));
+    }
+
+    public void cancelled() {
     }
 
     public void afterStory(boolean givenStory) {
@@ -402,6 +408,14 @@ public class TemplateableOutput implements StoryReporter {
         public List<Map<String, String>> getExamples() {
             return examples;
         }
+    }
+
+    public static class OutputRestart extends OutputStep {
+
+        public OutputRestart(String step, String outcome) {
+            super(step, outcome);
+        }
+
     }
 
     public static class OutputStep {

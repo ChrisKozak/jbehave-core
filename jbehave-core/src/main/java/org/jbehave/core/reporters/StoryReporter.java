@@ -57,8 +57,11 @@ public interface StoryReporter {
 
 	void failedOutcomes(String step, OutcomesTable table);
 
-	void dryRun();
+    void restarted(String step, Throwable cause);
+
+    void dryRun();
 
     void pendingMethods(List<String> methods);
 
+    void cancelled();
 }
